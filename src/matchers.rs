@@ -1,12 +1,6 @@
-use std::fmt::Debug;
+use std::{any::Any, fmt::Debug};
 
-/// Define conditions used to check whether a node's command tree should be followed.
-pub trait Matcher: Debug {
-    /// Check whether the conditions of this matcher are met with the given input slice.
-    /// If the conditions are met, return the number of characters consumed.
-    /// If the conditions are not met, return an error.
-    fn apply<'a>(&self, input: &'a str) -> Result<usize, MatchError<'a>>;
-}
+use crate::arguments::CommandArgs;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum MatchError<'a> {
@@ -14,26 +8,51 @@ pub enum MatchError<'a> {
     InvalidInput(&'a str),
 }
 
-#[derive(Debug)]
-pub struct Wildcard;
+/// Used to validate input and extract arguments from it.
+pub enum Checkpoint {
+    Literal(String),
+    Argument(String, Box<dyn Argument>),
+    Wildcard,
+}
 
-impl Matcher for Wildcard {
-    fn apply<'a>(&self, _: &'a str) -> Result<usize, MatchError<'a>> {
-        Ok(0)
+impl Checkpoint {
+    pub fn apply<'a>(
+        &self,
+        input: &'a str,
+        args: &mut CommandArgs,
+    ) -> Result<usize, MatchError<'a>> {
+        match self {
+            Checkpoint::Literal(lit) => {
+                if input.len() == 0 {
+                    Err(MatchError::EndOfInput)
+                } else if input.starts_with(lit) {
+                    Ok(lit.len())
+                } else {
+                    Err(MatchError::InvalidInput(&input[..lit.len()]))
+                }
+            }
+            Checkpoint::Argument(name, value) => {
+                let (advance, value) = value.apply(input)?;
+                args.insert(name, value);
+                Ok(advance)
+            }
+            Checkpoint::Wildcard => Ok(0),
+        }
     }
 }
 
-#[derive(Debug)]
-pub struct Literal(pub String);
+pub trait Argument {
+    fn apply<'a>(&self, input: &'a str) -> Result<(usize, Box<dyn Any>), MatchError<'a>>;
+}
 
-impl Matcher for Literal {
-    fn apply<'a>(&self, input: &'a str) -> Result<usize, MatchError<'a>> {
-        if input.len() == 0 {
-            Err(MatchError::EndOfInput)
-        } else if input.starts_with(&self.0) {
-            Ok(self.0.len())
+impl Argument for String {
+    fn apply<'a>(&self, input: &'a str) -> Result<(usize, Box<dyn Any>), MatchError<'a>> {
+        if input.starts_with('"') {
+            let end = input[1..].find('"').ok_or(MatchError::EndOfInput)?;
+            Ok((end + 2, Box::new(input[1..end].to_string())))
         } else {
-            Err(MatchError::InvalidInput(&input[..self.0.len()]))
+            let end = input.find(' ').unwrap_or(input.len());
+            Ok((end, Box::new(input[..end].to_string())))
         }
     }
 }

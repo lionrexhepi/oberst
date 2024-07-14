@@ -1,6 +1,15 @@
+mod arguments;
 pub(crate) mod matchers;
 
-pub use matchers::{MatchError, Matcher};
+use arguments::CommandArgs;
+use matchers::Checkpoint;
+pub use matchers::MatchError;
+
+#[derive(Debug)]
+pub enum CommandError<'a> {
+    InputError(MatchError<'a>),
+    ExecError(Box<dyn std::error::Error + 'a>),
+}
 
 pub struct Dispatcher<C> {
     context: C,
@@ -19,38 +28,42 @@ impl<C> Dispatcher<C> {
         self.tree.children.push(node)
     }
 
-    pub fn dispatch<'a>(&mut self, command: &'a str) -> Result<(), MatchError<'a>> {
-        let runner = self.tree.traverse(command.trim_start())?;
-        runner(&mut self.context);
-        Ok(())
+    pub fn dispatch<'a>(&mut self, command: &'a str) -> Result<(), CommandError<'a>> {
+        self.tree.execute(&mut self.context, command.trim_start())
     }
 }
 
 pub struct CommandNode<C> {
-    matcher: Box<dyn Matcher>,
+    checkpoint: Checkpoint,
     // TODO: make sure two children cannot overlap: return an error/panic
     children: Vec<CommandNode<C>>,
-    executes: Option<Box<dyn Fn(&mut C)>>,
+    executes: Option<Box<dyn Fn(&mut C, &CommandArgs)>>,
 }
 
 impl<C> CommandNode<C> {
     pub fn root() -> Self {
-        Self::new(matchers::Wildcard)
+        Self::new(Checkpoint::Wildcard)
     }
 
-    pub fn new(matcher: impl Matcher + 'static) -> Self {
+    fn new(checkpoint: Checkpoint) -> Self {
         Self {
-            matcher: Box::new(matcher),
+            checkpoint,
             children: Vec::new(),
             executes: None,
         }
     }
 
-    pub(crate) fn traverse<'a>(
+    pub(crate) fn execute<'a>(
         &self,
+        context: &mut C,
         mut command: &'a str,
-    ) -> Result<&dyn Fn(&mut C), MatchError<'a>> {
-        let advance = self.matcher.apply(&command)?;
+    ) -> Result<(), CommandError<'a>> {
+        // TODO: create only one shared instance of CommandArgs for each command
+        let mut args = CommandArgs::new();
+        let advance = self
+            .checkpoint
+            .apply(&command, &mut args)
+            .map_err(CommandError::InputError)?;
         command = &command[advance..].trim_start();
 
         // Check for empty rest before excessively iterating over each child node
@@ -58,17 +71,17 @@ impl<C> CommandNode<C> {
             return self
                 .executes
                 .as_ref()
-                .ok_or(MatchError::EndOfInput)
-                .map(|r| &**r);
+                .ok_or(CommandError::InputError(MatchError::EndOfInput))
+                .map(|r| r(context, &args));
         }
 
         for child in &self.children {
-            if let Ok(run) = child.traverse(command) {
+            if let Ok(run) = child.execute(context, command) {
                 return Ok(run);
             }
         }
 
-        Err(MatchError::InvalidInput(command))
+        Err(CommandError::InputError(MatchError::InvalidInput(command)))
     }
 
     pub fn then(mut self, node: Self) -> Self {
@@ -76,14 +89,14 @@ impl<C> CommandNode<C> {
         self
     }
 
-    pub fn runs(mut self, f: impl Fn(&mut C) + 'static) -> Self {
+    pub fn runs(mut self, f: impl Fn(&mut C, &CommandArgs) + 'static) -> Self {
         self.executes = Some(Box::new(f));
         self
     }
 }
 
 pub fn literal<C>(lit: impl ToString) -> CommandNode<C> {
-    CommandNode::new(matchers::Literal(lit.to_string()))
+    CommandNode::new(Checkpoint::Literal(lit.to_string()))
 }
 
 #[cfg(test)]
@@ -95,10 +108,10 @@ mod test {
         let mut dispatcher = Dispatcher::new(());
         dispatcher.register(
             literal("foo")
-                .then(literal("bar").runs(|_| println!("foo bar")))
-                .then(literal("baz").runs(|_| println!("foo baz"))),
+                .then(literal("bar").runs(|_, _| println!("foo bar")))
+                .then(literal("baz").runs(|_, _| println!("foo baz"))),
         );
-        dispatcher.register(literal("qux").runs(|_| println!("qux")));
+        dispatcher.register(literal("qux").runs(|_, _| println!("qux")));
 
         dispatcher.dispatch("foo bar").unwrap();
         dispatcher.dispatch("foo baz").unwrap();
