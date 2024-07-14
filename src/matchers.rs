@@ -12,6 +12,14 @@ pub enum MatchError<'a> {
     InvalidInput(&'a str),
 }
 
+pub struct Wildcard;
+
+impl Matcher for Wildcard {
+    fn apply<'a>(&self, input: &'a str) -> Result<usize, MatchError<'a>> {
+        Ok(0)
+    }
+}
+
 pub struct Literal(pub String);
 
 impl Matcher for Literal {
