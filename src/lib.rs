@@ -1,5 +1,7 @@
 pub(crate) mod matchers;
 
+use std::fmt::Debug;
+
 pub use matchers::{MatchError, Matcher};
 
 pub struct Dispatcher<C> {
@@ -51,7 +53,8 @@ impl<C> CommandNode<C> {
         mut command: &'a str,
     ) -> Result<&dyn Fn(&mut C), MatchError<'a>> {
         let advance = self.matcher.apply(&command)?;
-        command = &command[..advance - 1].trim_start();
+        command = &command[advance..].trim_start();
+        println!("matcher {:?} consumed {} characters", self.matcher, advance);
 
         // Check for empty rest before excessively iterating over each child node
         if command.is_empty() {
@@ -86,4 +89,23 @@ pub fn literal<C>(lit: impl ToString) -> CommandNode<C> {
     CommandNode::new(matchers::Literal(lit.to_string()))
 }
 
-mod test {}
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_traversal() {
+        use super::*;
+
+        let mut dispatcher = Dispatcher::new(());
+        dispatcher.register(
+            literal("foo")
+                .then(literal("bar").runs(|_| println!("foo bar")))
+                .then(literal("baz").runs(|_| println!("foo baz"))),
+        );
+        dispatcher.register(literal("qux").runs(|_| println!("qux")));
+
+        dispatcher.dispatch("foo bar").unwrap();
+        dispatcher.dispatch("foo baz").unwrap();
+        dispatcher.dispatch("foo").unwrap_err();
+        dispatcher.dispatch("qux").unwrap();
+    }
+}

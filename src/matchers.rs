@@ -1,5 +1,7 @@
+use std::fmt::Debug;
+
 /// Define conditions used to check whether a node's command tree should be followed.
-pub trait Matcher {
+pub trait Matcher: Debug {
     /// Check whether the conditions of this matcher are met with the given input slice.
     /// If the conditions are met, return the number of characters consumed.
     /// If the conditions are not met, return an error.
@@ -12,6 +14,7 @@ pub enum MatchError<'a> {
     InvalidInput(&'a str),
 }
 
+#[derive(Debug)]
 pub struct Wildcard;
 
 impl Matcher for Wildcard {
@@ -20,10 +23,12 @@ impl Matcher for Wildcard {
     }
 }
 
+#[derive(Debug)]
 pub struct Literal(pub String);
 
 impl Matcher for Literal {
     fn apply<'a>(&self, input: &'a str) -> Result<usize, MatchError<'a>> {
+        println!("Checking for literal {:?} in {input}", self.0);
         if input.len() == 0 {
             Err(MatchError::EndOfInput)
         } else if input.starts_with(&self.0) {
