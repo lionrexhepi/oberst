@@ -18,7 +18,7 @@ pub enum MatchError<'a> {
 pub struct Wildcard;
 
 impl Matcher for Wildcard {
-    fn apply<'a>(&self, input: &'a str) -> Result<usize, MatchError<'a>> {
+    fn apply<'a>(&self, _: &'a str) -> Result<usize, MatchError<'a>> {
         Ok(0)
     }
 }
@@ -28,7 +28,6 @@ pub struct Literal(pub String);
 
 impl Matcher for Literal {
     fn apply<'a>(&self, input: &'a str) -> Result<usize, MatchError<'a>> {
-        println!("Checking for literal {:?} in {input}", self.0);
         if input.len() == 0 {
             Err(MatchError::EndOfInput)
         } else if input.starts_with(&self.0) {

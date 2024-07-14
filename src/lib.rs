@@ -1,7 +1,5 @@
 pub(crate) mod matchers;
 
-use std::fmt::Debug;
-
 pub use matchers::{MatchError, Matcher};
 
 pub struct Dispatcher<C> {
@@ -54,7 +52,6 @@ impl<C> CommandNode<C> {
     ) -> Result<&dyn Fn(&mut C), MatchError<'a>> {
         let advance = self.matcher.apply(&command)?;
         command = &command[advance..].trim_start();
-        println!("matcher {:?} consumed {} characters", self.matcher, advance);
 
         // Check for empty rest before excessively iterating over each child node
         if command.is_empty() {
