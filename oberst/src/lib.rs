@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
 pub mod parser;
+mod test;
 
 pub type Parse<Context> = for<'a> fn(
     &mut parser::CommandParser<'a>,
 ) -> Result<Execute<'a, Context>, parser::ParseError<'a>>;
-pub type Execute<'a, Context> = fn(&Context) -> Result<(), CommandError<'a>>;
+pub type Execute<'a, Context> = Box<dyn FnOnce(&Context) -> Result<(), CommandError<'a>>>;
 
 pub enum CommandError<'a> {
     Parse(parser::ParseError<'a>),
@@ -34,7 +35,7 @@ pub struct CommandUsage {
 }
 
 struct Command<Context: 'static> {
-    usage: CommandUsage,
+    usage: &'static CommandUsage,
     dispatchers: &'static [CommandDispatch<Context>],
 }
 
@@ -58,23 +59,12 @@ impl<Context: 'static> CommandSource<Context> {
     pub fn register(
         &mut self,
         name: &'static str,
-        description: &'static str,
-        valid_forms: &'static [&'static str],
+        usage: &'static CommandUsage,
         dispatchers: &'static [CommandDispatch<Context>],
     ) {
         assert!(!dispatchers.is_empty());
         debug_assert!(name.chars().all(char::is_alphabetic));
-        self.commands.insert(
-            name,
-            Command {
-                usage: CommandUsage {
-                    name,
-                    usage: valid_forms,
-                    description: Some(description),
-                },
-                dispatchers,
-            },
-        );
+        self.commands.insert(name, Command { usage, dispatchers });
     }
 
     pub fn dispatch<'a>(&self, command: &'a str) -> Result<(), CommandError<'a>> {
@@ -102,4 +92,11 @@ impl<Context: 'static> CommandSource<Context> {
             last_error.expect("Expected at least one dispatch"),
         ))
     }
+}
+
+#[macro_export]
+macro_rules! register_command {
+    ($source:expr, $name:ident) => {
+        ($source).register(stringify!($name), $name::USAGE, $name::DISPATCHERS)
+    };
 }

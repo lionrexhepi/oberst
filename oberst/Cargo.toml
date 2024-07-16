@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-oberst_proc = { src ="}
+oberst_proc = { path = "../oberst_proc" }
