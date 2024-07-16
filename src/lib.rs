@@ -1,121 +1,105 @@
-mod arguments;
-pub(crate) mod matchers;
+use std::collections::HashMap;
 
-use arguments::CommandArgs;
-use matchers::Checkpoint;
-pub use matchers::MatchError;
+pub mod parser;
 
-#[derive(Debug)]
+pub type Parse<Context> = for<'a> fn(
+    &mut parser::CommandParser<'a>,
+) -> Result<Execute<'a, Context>, parser::ParseError<'a>>;
+pub type Execute<'a, Context> = fn(&Context) -> Result<(), CommandError<'a>>;
+
 pub enum CommandError<'a> {
-    InputError(MatchError<'a>),
-    ExecError(Box<dyn std::error::Error + 'a>),
+    Parse(parser::ParseError<'a>),
+    Dispatch(Box<dyn std::error::Error + 'a>),
 }
 
-pub struct Dispatcher<C> {
-    context: C,
-    tree: CommandNode<C>,
+impl<'a> From<parser::ParseError<'a>> for CommandError<'a> {
+    fn from(error: parser::ParseError<'a>) -> Self {
+        CommandError::Parse(error)
+    }
 }
 
-impl<C> Dispatcher<C> {
-    pub fn new(context: C) -> Self {
+impl<'a, E> From<E> for CommandError<'a>
+where
+    E: std::error::Error + 'a,
+{
+    fn from(error: E) -> Self {
+        CommandError::Dispatch(Box::new(error))
+    }
+}
+
+pub struct CommandUsage {
+    pub name: &'static str,
+    pub usage: &'static [&'static str],
+    pub description: Option<&'static str>,
+}
+
+struct Command<Context: 'static> {
+    usage: CommandUsage,
+    dispatchers: &'static [CommandDispatch<Context>],
+}
+
+pub struct CommandDispatch<Context> {
+    pub parser: Parse<Context>,
+}
+
+pub struct CommandSource<Context: 'static> {
+    commands: HashMap<&'static str, Command<Context>>,
+    context: Context,
+}
+
+impl<Context: 'static> CommandSource<Context> {
+    pub fn new(context: Context) -> Self {
         Self {
+            commands: HashMap::new(),
             context,
-            tree: CommandNode::root(),
         }
     }
 
-    pub fn register(&mut self, node: CommandNode<C>) {
-        self.tree.children.push(node)
+    pub fn register(
+        &mut self,
+        name: &'static str,
+        description: &'static str,
+        valid_forms: &'static [&'static str],
+        dispatchers: &'static [CommandDispatch<Context>],
+    ) {
+        assert!(!dispatchers.is_empty());
+        debug_assert!(name.chars().all(char::is_alphabetic));
+        self.commands.insert(
+            name,
+            Command {
+                usage: CommandUsage {
+                    name,
+                    usage: valid_forms,
+                    description: Some(description),
+                },
+                dispatchers,
+            },
+        );
     }
 
-    pub fn dispatch<'a>(&mut self, command: &'a str) -> Result<(), CommandError<'a>> {
-        self.tree.execute(&mut self.context, command.trim_start())
-    }
-}
+    pub fn dispatch<'a>(&self, command: &'a str) -> Result<(), CommandError<'a>> {
+        let mut parser = parser::CommandParser::new(command);
+        let command = parser.read_while(|c| c.is_alphabetic());
+        let command = self.commands.get(&command).ok_or(CommandError::Parse(
+            parser.error(parser::ParseErrorKind::UnknownCommand),
+        ))?;
 
-pub struct CommandNode<C> {
-    checkpoint: Checkpoint,
-    // TODO: make sure two children cannot overlap: return an error/panic
-    children: Vec<CommandNode<C>>,
-    executes: Option<Box<dyn Fn(&mut C, &CommandArgs)>>,
-}
+        let mut last_error = None;
 
-impl<C> CommandNode<C> {
-    pub fn root() -> Self {
-        Self::new(Checkpoint::Wildcard)
-    }
-
-    fn new(checkpoint: Checkpoint) -> Self {
-        Self {
-            checkpoint,
-            children: Vec::new(),
-            executes: None,
-        }
-    }
-
-    pub(crate) fn execute<'a>(
-        &self,
-        context: &mut C,
-        mut command: &'a str,
-    ) -> Result<(), CommandError<'a>> {
-        // TODO: create only one shared instance of CommandArgs for each command
-        let mut args = CommandArgs::new();
-        let advance = self
-            .checkpoint
-            .apply(&command, &mut args)
-            .map_err(CommandError::InputError)?;
-        command = &command[advance..].trim_start();
-
-        // Check for empty rest before excessively iterating over each child node
-        if command.is_empty() {
-            return self
-                .executes
-                .as_ref()
-                .ok_or(CommandError::InputError(MatchError::EndOfInput))
-                .map(|r| r(context, &args));
-        }
-
-        for child in &self.children {
-            if let Ok(run) = child.execute(context, command) {
-                return Ok(run);
+        for dispatch in command.dispatchers {
+            let mut branch = parser.branch();
+            match (dispatch.parser)(&mut branch) {
+                Ok(execute) => {
+                    return (execute)(&self.context);
+                }
+                Err(error) => {
+                    last_error = Some(error);
+                }
             }
         }
 
-        Err(CommandError::InputError(MatchError::InvalidInput(command)))
-    }
-
-    pub fn then(mut self, node: Self) -> Self {
-        self.children.push(node);
-        self
-    }
-
-    pub fn runs(mut self, f: impl Fn(&mut C, &CommandArgs) + 'static) -> Self {
-        self.executes = Some(Box::new(f));
-        self
-    }
-}
-
-pub fn literal<C>(lit: impl ToString) -> CommandNode<C> {
-    CommandNode::new(Checkpoint::Literal(lit.to_string()))
-}
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn test_traversal() {
-        use super::*;
-
-        let mut dispatcher = Dispatcher::new(());
-        dispatcher.register(
-            literal("foo")
-                .then(literal("bar").runs(|_, _| println!("foo bar")))
-                .then(literal("baz").runs(|_, _| println!("foo baz"))),
-        );
-        dispatcher.register(literal("qux").runs(|_, _| println!("qux")));
-
-        dispatcher.dispatch("foo bar").unwrap();
-        dispatcher.dispatch("foo baz").unwrap();
-        dispatcher.dispatch("foo").unwrap_err();
-        dispatcher.dispatch("qux").unwrap();
+        Err(CommandError::Parse(
+            last_error.expect("Expected at least one dispatch"),
+        ))
     }
 }
