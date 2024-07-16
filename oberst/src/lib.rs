@@ -1,23 +1,19 @@
 use std::collections::HashMap;
 
 pub mod parser;
-mod test;
+pub use oberst_proc::define_command;
 
 pub type Parse<Context> = for<'a> fn(
     &mut parser::CommandParser<'a>,
 ) -> Result<Execute<'a, Context>, parser::ParseError<'a>>;
-pub type Execute<'a, Context> = Box<dyn FnOnce(&Context) -> Result<(), CommandError<'a>>>;
+pub type Execute<'a, Context> = Box<dyn FnOnce(&Context) -> CommandResult<'a>>;
 
 pub enum CommandError<'a> {
     Parse(parser::ParseError<'a>),
     Dispatch(Box<dyn std::error::Error + 'a>),
 }
 
-impl<'a> From<parser::ParseError<'a>> for CommandError<'a> {
-    fn from(error: parser::ParseError<'a>) -> Self {
-        CommandError::Parse(error)
-    }
-}
+pub type CommandResult<'a> = std::result::Result<i32, CommandError<'a>>;
 
 impl<'a, E> From<E> for CommandError<'a>
 where
@@ -67,7 +63,11 @@ impl<Context: 'static> CommandSource<Context> {
         self.commands.insert(name, Command { usage, dispatchers });
     }
 
-    pub fn dispatch<'a>(&self, command: &'a str) -> Result<(), CommandError<'a>> {
+    pub fn get_usage(&self, command: &str) -> Option<&CommandUsage> {
+        self.commands.get(command).map(|command| command.usage)
+    }
+
+    pub fn dispatch<'a>(&'a self, command: &'a str) -> CommandResult {
         let mut parser = parser::CommandParser::new(command);
         let command = parser.read_while(|c| c.is_alphabetic());
         let command = self.commands.get(&command).ok_or(CommandError::Parse(

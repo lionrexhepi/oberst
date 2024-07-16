@@ -1,3 +1,5 @@
+use std::fmt::{self, Display, Formatter};
+
 pub struct CommandParser<'a> {
     command: &'a str,
     offset: usize,
@@ -64,12 +66,31 @@ impl<'a> CommandParser<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct ParseError<'a> {
     command: &'a str,
     offset: usize,
-    kind: ParseErrorKind,
+    pub kind: ParseErrorKind,
 }
 
+impl Display for ParseError<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let start = self.offset.saturating_sub(10);
+        let end = self.offset + 10;
+        let command = &self.command[start..end];
+        match self.kind {
+            ParseErrorKind::UnknownCommand => write!(f, "Unknown command: `{}`", command),
+            ParseErrorKind::UnexpectedEof => write!(f, "Unexpected end of command"),
+            ParseErrorKind::ExpectedEof => write!(f, "Expected end of command"),
+            ParseErrorKind::BadArgument => write!(f, "Bad argument"),
+            ParseErrorKind::BadLiteral => write!(f, "Bad literal"),
+        }
+    }
+}
+
+impl std::error::Error for ParseError<'_> {}
+
+#[derive(Debug)]
 pub enum ParseErrorKind {
     UnknownCommand,
     UnexpectedEof,
@@ -82,6 +103,24 @@ pub trait Argument {
     fn parse<'a>(parser: &mut CommandParser<'a>) -> Result<Self, ParseError<'a>>
     where
         Self: Sized;
+}
+
+impl Argument for () {
+    fn parse<'a>(_: &mut CommandParser<'a>) -> Result<Self, ParseError<'a>> {
+        Ok(())
+    }
+}
+
+impl Argument for String {
+    fn parse<'a>(parser: &mut CommandParser<'a>) -> Result<Self, ParseError<'a>>
+    where
+        Self: Sized,
+    {
+        parser.lit("\"")?;
+        let string = parser.read_while(|c| c != '"');
+        parser.lit("\"")?;
+        Ok(string.to_string())
+    }
 }
 
 /// Helper macro to conditionally generate code based on a boolean parameter.
