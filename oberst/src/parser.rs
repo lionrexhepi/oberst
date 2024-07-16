@@ -1,4 +1,7 @@
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    result,
+};
 
 pub struct CommandParser<'a> {
     command: &'a str,
@@ -117,19 +120,34 @@ impl Argument for String {
         Self: Sized,
     {
         parser.lit("\"")?;
-        let string = parser.read_while(|c| c != '"');
+        let mut result = String::new();
+        let mut escape = false;
+        parser.read_while(|c| {
+            if escape {
+                result.push(c);
+                escape = false;
+                true
+            } else if c == '\\' {
+                escape = true;
+                true
+            } else {
+                c != '"'
+            }
+        });
         parser.lit("\"")?;
-        Ok(string.to_string())
+        Ok(result.to_string())
     }
 }
 
 /// Helper macro to conditionally generate code based on a boolean parameter.
 macro_rules! cond {
-    (if true  { $($t:tt)* }) => {
+    (if true  { $($t:tt)* } else { $($e:tt)*}) => {
         $($t)*
     };
-    (if false  { $($t:tt)* }) => {};
-    (if $other:tt { $($t:tt)* }) => {
+    (if false  { $($t:tt)* } else { $($e:tt)*}) => {
+        $($e)*
+    };
+    (if $other:tt { $($t:tt)* } else { $($e:tt)*}) => {
        compile_error!("Conditional parameter must be either true or false");
     };
 }
@@ -141,18 +159,58 @@ macro_rules! argument_impl_int {
         $(
             impl Argument for $t {
                 fn parse<'a>(parser: &mut CommandParser<'a>) -> Result<Self, ParseError<'a>> {
-                    cond! {
+                    let sign = cond! {
                         if $signed {
                             if parser.command[parser.offset..].starts_with('-') {
                                 parser.advance(1);
+                                -1
+                            } else {
+                                1
                             }
+                        } else {
+                            1
                         }
-                    }
+                    };
                     let num = parser.read_while(|c| c.is_ascii_digit() );
                     if num.is_empty() {
                         Err(parser.error(ParseErrorKind::BadArgument))
                     } else {
-                        Ok(num.parse().unwrap())
+                        Ok(num.parse::<$t>().unwrap() * sign)
+                    }
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! argument_impl_float {
+    ($($t:ty),*) => {
+        $(
+            impl Argument for $t {
+                fn parse<'a>(parser: &mut CommandParser<'a>) -> Result<Self, ParseError<'a>> {
+                    let sign = if parser.command[parser.offset..].starts_with('-') {
+                        parser.advance(1);
+                        -1.0
+                    } else {
+                        1.0
+                    };
+                    let mut decimals = false;
+                    let num = parser.read_while(|c|  {
+                        if c == '.' {
+                            if decimals  {
+                                false
+                            } else {
+                                decimals = true;
+                                true
+                            }
+                        } else {
+                            c.is_ascii_digit()
+                        }
+                    });
+                    if num.is_empty() {
+                        Err(parser.error(ParseErrorKind::BadArgument))
+                    } else {
+                        Ok(num.parse::<$t>().unwrap() * sign)
                     }
                 }
             }
@@ -162,3 +220,4 @@ macro_rules! argument_impl_int {
 
 argument_impl_int!(false, u8, u16, u32, u64, u128, usize);
 argument_impl_int!(true, i8, i16, i32, i64, i128, isize);
+argument_impl_float!(f32, f64);
