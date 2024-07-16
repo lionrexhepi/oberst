@@ -1,8 +1,8 @@
-use std::{collections::HashMap, error};
+use std::collections::HashMap;
 
-use proc_macro::TokenStream;
+use proc_macro::{Span, TokenStream};
 use quote::quote;
-use syn::{braced, bracketed, parse_macro_input, spanned::Spanned, Ident, ItemFn, Type};
+use syn::{braced, parse_macro_input, spanned::Spanned, Attribute, Ident, ItemFn, Signature, Type};
 
 #[proc_macro]
 pub fn define_command(input: TokenStream) -> TokenStream {
@@ -87,31 +87,18 @@ impl syn::parse::Parse for CommandDefiniton {
         braced!(variant_block in input);
         let mut variants = vec![];
         while !variant_block.is_empty() {
-            let func = variant_block.parse::<syn::ItemFn>()?;
-            let arg_type_map = func
-                .sig
-                .inputs
-                .iter()
-                .map(|arg| {
-                    if let syn::FnArg::Typed(pat) = arg {
-                        if let syn::Pat::Ident(ident) = &*pat.pat {
-                            Ok((ident.ident.clone(), *pat.ty.clone()))
-                        } else {
-                            return Err(syn::Error::new(pat.pat.span(), "Expected identifier"));
-                        }
-                    } else {
-                        return Err(syn::Error::new(arg.span(), "Expected typed argument"));
-                    }
-                })
-                .collect::<syn::Result<Vec<_>>>()?;
+            let mut function = variant_block.parse::<syn::ItemFn>()?;
+            let arg_names = extract_args_from_signature(&function.sig)?;
 
-            let syntax = arg_type_map
-                .iter()
-                .skip(1)
-                .map(|(arg_name, ty)| CommandSyntax::Argument(arg_name.clone(), ty.clone()))
-                .collect::<Vec<_>>();
+            let syntax =
+                if let Some(usage) = extract_usage_string_from_metadata(&mut function.attrs)? {
+                    build_syntax_from_usage(&arg_names, usage)
+                } else {
+                    build_syntax_from_signature(&arg_names)
+                };
+
             variants.push(CommandVariant {
-                function: func,
+                function,
                 usage: build_usage_string(&syntax),
                 syntax,
             });
@@ -144,4 +131,81 @@ fn build_usage_string(syntax: &[CommandSyntax]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn extract_args_from_signature(sig: &Signature) -> syn::Result<HashMap<Ident, Type>> {
+    sig.inputs
+        .iter()
+        .skip(1)
+        .map(|arg| {
+            if let syn::FnArg::Typed(pat) = arg {
+                if let syn::Pat::Ident(ident) = &*pat.pat {
+                    Ok((ident.ident.clone(), *pat.ty.clone()))
+                } else {
+                    return Err(syn::Error::new(pat.pat.span(), "Expected identifier"));
+                }
+            } else {
+                return Err(syn::Error::new(arg.span(), "Expected typed argument"));
+            }
+        })
+        .collect::<syn::Result<HashMap<_, _>>>()
+}
+
+fn extract_usage_string_from_metadata(attrs: &mut Vec<Attribute>) -> syn::Result<Option<String>> {
+    let mut usage = None;
+
+    for (i, attr) in attrs.iter().enumerate() {
+        if attr.path().is_ident("usage") {
+            match &attr.meta {
+                syn::Meta::NameValue(syn::MetaNameValue {
+                    value:
+                        syn::Expr::Lit(syn::ExprLit {
+                            lit: syn::Lit::Str(lit),
+                            ..
+                        }),
+                    ..
+                }) => {
+                    usage = Some(lit.value());
+                    attrs.remove(i);
+                    break;
+                }
+                _ => {
+                    return Err(syn::Error::new(attr.span(), "Expected usage string"));
+                }
+            }
+        }
+    }
+    Ok(usage)
+}
+
+fn build_syntax_from_signature(arg_names: &HashMap<Ident, Type>) -> Vec<CommandSyntax> {
+    arg_names
+        .iter()
+        .map(|(name, ty)| CommandSyntax::Argument(name.clone(), ty.clone()))
+        .collect()
+}
+
+fn build_syntax_from_usage(arg_names: &HashMap<Ident, Type>, usage: String) -> Vec<CommandSyntax> {
+    return usage
+        .split(" ")
+        .into_iter()
+        .map(|segment| {
+            if segment.starts_with("<") {
+                let name = segment
+                    .chars()
+                    .skip(1)
+                    .take_while(|c| *c != '>')
+                    .collect::<String>();
+                let name_ident = Ident::new(&name, Span::call_site().into());
+                let ty = arg_names.get(&name_ident);
+                if let Some(ty) = ty {
+                    CommandSyntax::Argument(name_ident, ty.clone())
+                } else {
+                    panic!("Unknown argument: {}", name);
+                }
+            } else {
+                CommandSyntax::Literal(segment.to_string())
+            }
+        })
+        .collect();
 }
