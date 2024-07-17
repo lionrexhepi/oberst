@@ -68,4 +68,4 @@ Commands can be registered to a source using the `register_command!` helper macr
 - [x] Add support for both `CommandResult` and `()` return values
 - [x] Add support for custom syntax with `#[args = "..."]`
 - [ ] Add support for multithreaded commands
-- [ ] Make `CommandSource` clonable to avoid having to pass references around
+- [x] Make `CommandSource` clonable to avoid having to pass references around
