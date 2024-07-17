@@ -10,4 +10,4 @@ license = "MIT"
 
 
 [dependencies]
-oberst_proc = { path = "./oberst_proc" }
+oberst_proc = { path = "./oberst_proc", version = "0.1.0" }
