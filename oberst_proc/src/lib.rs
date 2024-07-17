@@ -7,6 +7,12 @@ use syn::{
     FnArg, Ident, ItemFn, Pat, PatType, Signature, Type, TypeReference,
 };
 
+/// Define a command with the given name and context type.
+/// Commands are defined as functions that take a reference to their context type as their first argument.
+/// The function should return a `Result` with an `i32` as the success value or `()`.
+/// By default, a command's usage is generated from its arguments in sequential order.
+/// To specify a custom usage string, add an `args` attribute to the function.
+/// The attribute should be a string literal containing the desired usage string **excluding** the command name.
 #[proc_macro]
 pub fn define_command(input: TokenStream) -> TokenStream {
     let CommandDefiniton {
