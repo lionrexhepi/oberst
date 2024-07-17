@@ -156,6 +156,7 @@ impl CommandVariant {
         parse_quote! {
             |parser| {
                 #(#parser)*
+                parser.end()?;
                 #caller
 
             }

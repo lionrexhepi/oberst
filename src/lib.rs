@@ -12,6 +12,7 @@ pub type Parse<Context> = for<'a> fn(
 pub type Execute<'a, Context> = Box<dyn FnOnce(&Context) -> CommandResult<'a>>;
 
 /// Any error that can occur while parsing or executing a command.
+#[derive(Debug)]
 pub enum CommandError<'a> {
     Parse(parser::ParseError<'a>),
     Dispatch(Box<dyn std::error::Error + 'a>),
@@ -113,6 +114,6 @@ impl<Context: 'static> CommandSource<Context> {
 #[macro_export]
 macro_rules! register_command {
     ($source:expr, $name:ident) => {
-        ($source).register(stringify!($name), $name::USAGE, $name::DISPATCHERS)
+        ($source).register(stringify!($name), &$name::USAGE, $name::DISPATCHERS)
     };
 }

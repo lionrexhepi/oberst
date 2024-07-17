@@ -160,8 +160,11 @@ impl Argument for String {
             } else if c == '\\' {
                 escape = true;
                 true
+            } else if c == '"' {
+                false
             } else {
-                c != '"'
+                result.push(c);
+                true
             }
         });
         parser.lit("\"")?;
