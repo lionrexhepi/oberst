@@ -10,4 +10,4 @@ description = "A type-safe command parser and dispatcher inspired by Brigadier a
 
 
 [dependencies]
-oberst_proc = { path = "./oberst_proc", version = "0.1.0" }
+oberst_proc = { path = "./oberst_proc", version = "0.1.1" }
