@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 pub mod parser;
 pub use oberst_proc::define_command;
@@ -32,6 +32,7 @@ where
 
 /// Contains the name and possible usages of a command.
 /// Generated automatically.
+#[derive(Clone)]
 pub struct CommandUsage {
     pub name: &'static str,
     pub usage: &'static [&'static str],
@@ -49,9 +50,10 @@ pub struct CommandDispatch<Context> {
 }
 
 /// The core of `oberst`. This struct manages commands and allows them to be dispatched.
+#[derive(Clone)]
 pub struct CommandSource<Context: 'static> {
-    commands: HashMap<&'static str, Command<Context>>,
-    context: Context,
+    commands: Rc<RefCell<HashMap<&'static str, Command<Context>>>>,
+    context: Rc<Context>,
 }
 
 impl<Context: 'static> CommandSource<Context> {
@@ -59,34 +61,40 @@ impl<Context: 'static> CommandSource<Context> {
     /// The context will be passed to all commands.
     pub fn new(context: Context) -> Self {
         Self {
-            commands: HashMap::new(),
-            context,
+            commands: Default::default(),
+            context: Rc::new(context),
         }
     }
 
     /// Register a command with the given name, usage and dispatchers.
     /// Use the `register_command!` macro instead of calling this method directly.
     pub fn register(
-        &mut self,
+        &self,
         name: &'static str,
         usage: &'static CommandUsage,
         dispatchers: &'static [CommandDispatch<Context>],
     ) {
         assert!(!dispatchers.is_empty());
         debug_assert!(name.chars().all(char::is_alphabetic));
-        self.commands.insert(name, Command { usage, dispatchers });
+        self.commands
+            .borrow_mut()
+            .insert(name, Command { usage, dispatchers });
     }
 
     /// Get the usage information for the given command.
-    pub fn get_usage(&self, command: &str) -> Option<&CommandUsage> {
-        self.commands.get(command).map(|command| command.usage)
+    pub fn get_usage(&self, command: &str) -> Option<&'static CommandUsage> {
+        self.commands
+            .borrow()
+            .get(command)
+            .map(|command| command.usage)
     }
 
     /// Dispatch a command described by the string in `command`.
     pub fn dispatch<'a>(&'a self, command: &'a str) -> CommandResult {
         let mut parser = parser::CommandParser::new(command);
         let command = parser.read_while(|c| c.is_alphabetic());
-        let command = self.commands.get(&command).ok_or(CommandError::Parse(
+        let map = self.commands.borrow();
+        let command = map.get(&command).ok_or(CommandError::Parse(
             parser.error(parser::ParseErrorKind::UnknownCommand),
         ))?;
 
