@@ -63,9 +63,9 @@ Commands can be registered to a source using the `register_command!` helper macr
 ```
 
 ## Roadmap
-[x] Command creation & dispatchment
-[x] Argument parsers for most std types
-[x] Add support for both `CommandResult` and `()` return values
-[x] Add support for custom syntax with `#[args = "..."]`
-[ ] Add support for multithreaded commands
-[ ] Make `CommandSource` clonable to avoid having to pass references around
+- [x] Command creation & dispatchment
+- [x] Argument parsers for most std types
+- [x] Add support for both `CommandResult` and `()` return values
+- [x] Add support for custom syntax with `#[args = "..."]`
+- [ ] Add support for multithreaded commands
+- [ ] Make `CommandSource` clonable to avoid having to pass references around
