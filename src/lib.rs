@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 pub mod parser;
-mod test;
 pub use oberst_proc::define_command;
 
 /// Helper type used internally by `define_command!`.
