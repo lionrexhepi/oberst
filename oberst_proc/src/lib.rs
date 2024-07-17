@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use proc_macro::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::{
-    braced, parenthesized, parse_macro_input, spanned::Spanned, Attribute, Error, FnArg, Ident,
-    ItemFn, Pat, PatType, Signature, Type, TypeReference,
+    braced, parenthesized, parse_macro_input, parse_quote, spanned::Spanned, Attribute, Error,
+    FnArg, Ident, ItemFn, Pat, PatType, Signature, Type, TypeReference,
 };
 
 #[proc_macro]
@@ -18,33 +18,11 @@ pub fn define_command(input: TokenStream) -> TokenStream {
     let functions = variants.iter().map(|variant| &variant.function);
 
     let dispatchers = variants.iter().map(|variant| {
-        let name = variant.function.sig.ident.clone();
-        let parser = variant.syntax.iter().map(|syntax| match syntax {
-            CommandSyntax::Literal(literal) => {
-                quote! {
-                    parser.lit(#literal)?;
-                }
-            }
-            CommandSyntax::Argument(name, ty) => {
-                quote! {
-                    let #name = parser.argument::<#ty>()?;
-                }
-            }
-        });
-
-        let call_args = variant.syntax.iter().filter_map(|item| match item {
-            CommandSyntax::Literal(_) => None,
-            CommandSyntax::Argument(name, _) => Some(name),
-        });
+        let parser = variant.generate_parser();
 
         quote! {
             CommandDispatch {
-                parser: |parser| {
-                    #(#parser)*
-                    Ok(Box::new(move |ctx| {
-                        #name(ctx, #(#call_args,)*)
-                    }))
-                },
+                parser: #parser,
             }
         }
     });
@@ -71,7 +49,7 @@ pub fn define_command(input: TokenStream) -> TokenStream {
             #(#functions)*
         }
     };
-    // panic!("{}", result.to_string());
+
     result.into()
 }
 
@@ -121,6 +99,60 @@ struct CommandVariant {
     function: ItemFn,
     usage: String,
     syntax: Vec<CommandSyntax>,
+}
+
+impl CommandVariant {
+    fn generate_caller(&self) -> syn::Expr {
+        let args = self.syntax.iter().filter_map(|syntax| match syntax {
+            CommandSyntax::Literal(_) => None,
+            CommandSyntax::Argument(name, _) => Some(name),
+        });
+
+        let return_type = &self.function.sig.output;
+        let name = &self.function.sig.ident;
+
+        let call: syn::Block = if let syn::ReturnType::Default = return_type {
+            parse_quote! { {
+                #name(ctx, #(#args,)*);
+                Ok(0)
+            }
+            }
+        } else {
+            parse_quote! {
+               { #name(ctx, #(#args,)*) }
+            }
+        };
+
+        parse_quote! {
+            Ok(Box::new(|ctx| {
+                #call
+            }))
+        }
+    }
+
+    fn generate_parser(&self) -> syn::Expr {
+        let parser = self.syntax.iter().map(|syntax| match syntax {
+            CommandSyntax::Literal(literal) => {
+                quote! {
+                    parser.lit(#literal)?;
+                }
+            }
+            CommandSyntax::Argument(name, ty) => {
+                quote! {
+                    let #name = parser.argument::<#ty>()?;
+                }
+            }
+        });
+
+        let caller = self.generate_caller();
+        parse_quote! {
+            |parser| {
+                #(#parser)*
+                #caller
+
+            }
+        }
+    }
 }
 
 enum CommandSyntax {

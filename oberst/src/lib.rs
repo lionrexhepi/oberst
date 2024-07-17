@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 pub mod parser;
+mod test;
 pub use oberst_proc::define_command;
 
 pub type Parse<Context> = for<'a> fn(
