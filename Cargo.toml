@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/lionrexhepi/oberst"
 homepage = "https://github.com/lionrexhepi/oberst"
-readme = "../README.md"
+readme = ./"README.md"
 license = "MIT"
 description = "A type-safe command parser and dispatcher inspired by Brigadier and written in Rust."
 
