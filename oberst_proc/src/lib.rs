@@ -140,11 +140,13 @@ impl CommandVariant {
         let parser = self.syntax.iter().map(|syntax| match syntax {
             CommandSyntax::Literal(literal) => {
                 quote! {
+                    parser.spacing()?;
                     parser.lit(#literal)?;
                 }
             }
             CommandSyntax::Argument(name, ty) => {
                 quote! {
+                    parser.spacing()?;
                     let #name = parser.argument::<#ty>()?;
                 }
             }

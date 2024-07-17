@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 pub mod parser;
+mod test;
 pub use oberst_proc::define_command;
 
 /// Helper type used internally by `define_command!`.
@@ -48,7 +49,6 @@ pub struct CommandDispatch<Context> {
 }
 
 /// The core of `oberst`. This struct manages commands and allows them to be dispatched.
-
 pub struct CommandSource<Context: 'static> {
     commands: HashMap<&'static str, Command<Context>>,
     context: Context,

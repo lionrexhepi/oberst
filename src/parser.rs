@@ -1,15 +1,19 @@
 use std::fmt::{self, Display, Formatter};
 
+/// Helper to parse command syntax.
 pub struct CommandParser<'a> {
     command: &'a str,
     offset: usize,
 }
 
 impl<'a> CommandParser<'a> {
+    /// Create a parser for the given command.
     pub fn new(command: &'a str) -> Self {
         Self { command, offset: 0 }
     }
 
+    /// Match the given literal to the command, advancing the parser if successful.
+    /// Returns an error if the literal does not match.
     pub fn lit(&mut self, lit: &str) -> Result<(), ParseError<'a>> {
         if self.command[self.offset..].starts_with(lit) {
             self.offset += lit.len();
@@ -19,14 +23,29 @@ impl<'a> CommandParser<'a> {
         }
     }
 
+    /// Parse an argument of the given type.
+    /// See the `Argument` trait for more information.
     pub fn argument<A: Argument>(&mut self) -> Result<A, ParseError<'a>> {
         A::parse(self)
     }
 
+    /// Advance the parser by the given number of characters.
     pub fn advance(&mut self, n: usize) {
         self.offset += n;
     }
 
+    /// Consume an arbitrary number of whitespace characters greater than one.
+    pub fn spacing(&mut self) -> Result<(), ParseError<'a>> {
+        let spacing = self.read_while(char::is_whitespace);
+        if spacing.is_empty() {
+            Err(self.error(ParseErrorKind::ExpectedWhitespace))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Read characters from the command while the given predicate is true.
+    /// Returns the read characters.
     pub fn read_while<F>(&mut self, mut f: F) -> &'a str
     where
         F: FnMut(char) -> bool,
@@ -42,6 +61,7 @@ impl<'a> CommandParser<'a> {
         &self.command[start..self.offset]
     }
 
+    /// Generate and return a `ParseError` at the current position.   
     pub fn error(&self, kind: ParseErrorKind) -> ParseError<'a> {
         ParseError {
             command: self.command,
@@ -50,6 +70,7 @@ impl<'a> CommandParser<'a> {
         }
     }
 
+    /// Expect the end of the command.
     pub fn end(&mut self) -> Result<(), ParseError<'a>> {
         if self.offset == self.command.len() {
             Ok(())
@@ -58,6 +79,7 @@ impl<'a> CommandParser<'a> {
         }
     }
 
+    /// Create a copy of this parser at the current position.
     pub fn branch(&self) -> Self {
         Self {
             command: self.command,
@@ -66,6 +88,7 @@ impl<'a> CommandParser<'a> {
     }
 }
 
+/// An error that occurs during parsing.
 #[derive(Debug)]
 pub struct ParseError<'a> {
     command: &'a str,
@@ -84,6 +107,7 @@ impl Display for ParseError<'_> {
             ParseErrorKind::ExpectedEof => write!(f, "Expected end of command"),
             ParseErrorKind::BadArgument => write!(f, "Bad argument"),
             ParseErrorKind::BadLiteral => write!(f, "Bad literal"),
+            ParseErrorKind::ExpectedWhitespace => write!(f, "Expected whitespace"),
         }
     }
 }
@@ -92,13 +116,22 @@ impl std::error::Error for ParseError<'_> {}
 
 #[derive(Debug)]
 pub enum ParseErrorKind {
+    /// The given command name has no command associated with it.
     UnknownCommand,
+    /// The parser expected further input, though none was found.
     UnexpectedEof,
+    /// The parser expected the end of the command, but found more input.
     ExpectedEof,
+    /// The parser failed to process an argument.
     BadArgument,
+    /// The parser failed to match a literal.
     BadLiteral,
+    /// The parser expected whitespaces
+    ExpectedWhitespace,
 }
 
+/// A trait for parsing arguments from a command.
+/// This trait is implemented for most basic types, though it is possible to implement it for custom types as well.
 pub trait Argument {
     fn parse<'a>(parser: &mut CommandParser<'a>) -> Result<Self, ParseError<'a>>
     where
@@ -172,7 +205,7 @@ macro_rules! argument_impl_int {
                     if num.is_empty() {
                         Err(parser.error(ParseErrorKind::BadArgument))
                     } else {
-                        Ok(num.parse::<$t>().unwrap() * sign)
+                        Ok(num.parse::<$t>().map_err(|_| parser.error(ParseErrorKind::BadArgument))? * sign)
                     }
                 }
             }
@@ -207,7 +240,7 @@ macro_rules! argument_impl_float {
                     if num.is_empty() {
                         Err(parser.error(ParseErrorKind::BadArgument))
                     } else {
-                        Ok(num.parse::<$t>().unwrap() * sign)
+                        Ok(num.parse::<$t>().map_err(|_| parser.error(ParseErrorKind::BadArgument))? * sign)
                     }
                 }
             }
