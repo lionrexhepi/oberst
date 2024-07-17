@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Display, Formatter},
-    result,
-};
+use std::fmt::{self, Display, Formatter};
 
 pub struct CommandParser<'a> {
     command: &'a str,

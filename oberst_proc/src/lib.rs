@@ -124,7 +124,7 @@ impl CommandVariant {
         };
 
         parse_quote! {
-            Ok(Box::new(|ctx| {
+            Ok(Box::new(move |ctx| {
                 #call
             }))
         }
@@ -193,7 +193,7 @@ fn extract_usage_string_from_metadata(attrs: &mut Vec<Attribute>) -> syn::Result
     let mut usage = None;
 
     for (i, attr) in attrs.iter().enumerate() {
-        if attr.path().is_ident("usage") {
+        if attr.path().is_ident("args") {
             match &attr.meta {
                 syn::Meta::NameValue(syn::MetaNameValue {
                     value:
