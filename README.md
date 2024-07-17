@@ -26,7 +26,7 @@ Oberst leverages Rust's procedural macros in order to generate a command's synta
 Commands are defined with the `define_command` macro : 
 ```rust
     use oberst::{ CommandResult, define_command}
-    define_command!(hello: CommandContext /* Specify the type of context this command needs to run */ {
+    define_command!(hello (CommandContext) /* Specify the type of context this command needs to run */ {
         fn simple(context: &CommandContext) -> CommandResult {
             println!("Hello, {}!", &context.name);
             Ok(0) // Commands can return a "status code" that is returned to the dispatcher
